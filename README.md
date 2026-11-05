@@ -107,6 +107,45 @@ Measured on 2026-11-05 in the [Wokwi project](https://wokwi.com/projects/4798515
 
 All three LEDs ran at the same time, each at its own rate. The uneven on/off split (about 100/300 ms instead of 200/200 ms) comes from Wokwi's LED smoothing; see [Simulate in Wokwi](#simulate-in-wokwi).
 
+#### Serial log (real ESP-IDF firmware in Wokwi)
+
+The shared Wokwi link hides `ESP_LOGI` output, so this run used the real firmware instead: `idf.py merge-bin`, then *Upload Firmware and Start Simulation* on wokwi.com (2026-11-05). First 26 lines:
+
+```
+I (209) main_task: Started on CPU0
+I (209) main_task: Calling app_main()
+I (219) leds: 3 LEDs ready, starting the superloop
+I (429) leds: LED1 -> ON  at 563 ms
+I (629) leds: LED1 -> OFF at 763 ms
+I (729) leds: LED2 -> ON  at 863 ms
+I (829) leds: LED1 -> ON  at 963 ms
+I (1029) leds: LED1 -> OFF at 1163 ms
+I (1229) leds: LED1 -> ON  at 1363 ms
+I (1229) leds: LED2 -> OFF at 1363 ms
+I (1229) leds: LED3 -> ON  at 1363 ms
+I (1429) leds: LED1 -> OFF at 1563 ms
+I (1629) leds: LED1 -> ON  at 1763 ms
+I (1729) leds: LED2 -> ON  at 1863 ms
+I (1829) leds: LED1 -> OFF at 1963 ms
+I (2029) leds: LED1 -> ON  at 2163 ms
+I (2229) leds: LED1 -> OFF at 2363 ms
+I (2229) leds: LED2 -> OFF at 2363 ms
+I (2229) leds: LED3 -> OFF at 2363 ms
+I (2429) leds: LED1 -> ON  at 2563 ms
+I (2629) leds: LED1 -> OFF at 2763 ms
+I (2729) leds: LED2 -> ON  at 2863 ms
+I (2829) leds: LED1 -> ON  at 2963 ms
+I (3029) leds: LED1 -> OFF at 3163 ms
+```
+
+| LED | Toggle times from `esp_timer_get_time()` (ms) | Gap | Expected |
+|---|---|---|---|
+| LED1 | 563, 763, 963, 1163, 1363, … | 200 ms | 200 ms |
+| LED2 | 863, 1363, 1863, 2363, 2863 | 500 ms | 500 ms |
+| LED3 | 1363, 2363 | 1000 ms | 1000 ms |
+
+The `I (…)` prefix and the `at … ms` value come from two different clocks: the log's own timestamp and `esp_timer_get_time()`. They differ by a constant 134 ms here, so the gaps are the same in both.
+
 ### Board
 
 _To be added: the serial log from the real board (`idf.py -p COM5 monitor`)._
