@@ -1,0 +1,5 @@
+# Defaults for building solution 2 (one FreeRTOS task per LED) in its own
+# build folder, without touching the main build/ and sdkconfig:
+#   idf.py -B build_rtos -D SDKCONFIG=build_rtos/sdkconfig -D SDKCONFIG_DEFAULTS=sdkconfig.rtos build
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_LEDS_SOLUTION_RTOS_TASKS=y

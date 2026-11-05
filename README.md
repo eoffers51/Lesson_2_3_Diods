@@ -40,6 +40,87 @@ if (now_us - led->last_toggle_us >= led->interval_us) {
 - The level is kept in the struct, because `gpio_get_level()` reads 0 on a pin set to `GPIO_MODE_OUTPUT` (its input buffer is off).
 - `vTaskDelay(1)` at the end of each pass is **not** used for timing. It only gives the idle task a tick so the task watchdog doesn't fire. With the 100 Hz tick, a toggle can therefore be up to about 10 ms late, but it never drifts.
 
+## Solution 2: one FreeRTOS task per LED
+
+[`main/main_rtos.c`](main/main_rtos.c) solves the same problem a different way. The superloop handles the scheduling itself by checking every LED's clock on every pass. Here the **FreeRTOS scheduler** does that job instead: `app_main` calls `xTaskCreate` three times, and each task runs the same `blink_task` function with a pointer to its own LED.
+
+```c
+TickType_t last_wake = s_start_tick;
+for (;;) {
+    xTaskDelayUntil(&last_wake, period); // Blocked here, uses no CPU
+    level = !level;
+    gpio_set_level(led->gpio, level);
+}
+```
+
+- **Independent:** while one task waits in `xTaskDelayUntil`, it is *Blocked*, so the scheduler runs the other tasks. A slow LED never holds up a fast one.
+- **No drift:** `xTaskDelayUntil` wakes at `last_wake + period` and moves `last_wake` forward by exactly one period. That's the RTOS version of `last_toggle_us += interval_us`. A plain `vTaskDelay(period)` would add the time spent toggling and logging to every period, so the LED would slowly drift.
+- **Common start:** all tasks start counting from one shared `s_start_tick`, so the three LEDs toggle together at 1000 ms, 2000 ms, …
+- **Resolution:** the timing is in FreeRTOS ticks (10 ms at `CONFIG_FREERTOS_HZ=100`), so 200/500/1000 ms are exactly 20/50/100 ticks.
+- Each task costs its own stack (3 KB here), and `app_main` returns after creating the tasks, which is allowed in ESP-IDF.
+
+| | Superloop (`main.c`) | FreeRTOS tasks (`main_rtos.c`) |
+|---|---|---|
+| Who decides when an LED toggles | The loop, by comparing timestamps | The scheduler, by waking a Blocked task |
+| Waits for time | Never | Yes, but only inside each LED's own task |
+| Memory | One stack | One stack per LED |
+| Adding an LED | One line in the array | One line in the array (one more task) |
+
+> **Which one is the homework?** `TASK.md` forbids waiting for time (`delay()`), so the graded answer is the superloop in `main.c`, and it's built by default. The RTOS version waits (`xTaskDelayUntil`) but only in each LED's own task, so it shows the other common way to run independent jobs on an ESP32.
+
+### Building solution 2
+
+Pick the solution in `idf.py menuconfig` → *Lesson 2.3 LEDs* → *Blink solution* (the choice lives in [`main/Kconfig.projbuild`](main/Kconfig.projbuild)), or build it in its own folder without touching the default build:
+
+```powershell
+idf.py -B build_rtos -D SDKCONFIG=build_rtos/sdkconfig -D SDKCONFIG_DEFAULTS=sdkconfig.rtos build
+idf.py -B build_rtos -D SDKCONFIG=build_rtos/sdkconfig -D SDKCONFIG_DEFAULTS=sdkconfig.rtos -p COM5 flash monitor
+```
+
+Repeat the `-D` options on **every** `idf.py` command for `build_rtos`. Without `-D SDKCONFIG=...`, `idf.py` quietly uses the root `sdkconfig` (solution 1), even with `-B build_rtos`.
+
+The Wokwi project and `wokwi.toml` run solution 1.
+
+### Watching the tasks live in SystemView
+
+[SEGGER SystemView](https://www.segger.com/products/development-tools/systemview/) shows which FreeRTOS task runs when, live while the board runs. For solution 2 you see `LED1`, `LED2` and `LED3` wake every 200, 500 and 1000 ms for a moment, then go back to *Blocked*, with `Idle` running the rest of the time. The trace goes out over the same COM port as flashing, so no extra cable is needed.
+
+| File | What it does |
+|---|---|
+| [`sdkconfig.trace_uart`](sdkconfig.trace_uart) | Trace settings, added on top of `sdkconfig.rtos`: SystemView over UART0 (COM5) at 1 Mbaud, serial log and logging off, FreeRTOS on one core |
+| [`main/idf_component.yml`](main/idf_component.yml) | Pulls in `espressif/esp_sysview` (SystemView moved out of ESP-IDF in v6.0), only when tracing is on. Pinned to `~1.0.2`: 1.1.x needs a newer `esp_trace` API than IDF v6.0.2 has |
+| [`main/trace_params.c`](main/trace_params.c) | Trace build only. Tells ESP-IDF to open the `"sysview"` encoder. Without it the firmware aborts at boot with `Encoder 'ext' or transport 'apptrace' not found` |
+| [`tools/sysview_bridge.py`](tools/sysview_bridge.py) | Connects SystemView to COM5 (see below) |
+
+One-time setup: ESP-IDF numbers the FreeRTOS events its own way, so SystemView needs ESP-IDF's event description file. From an **administrator** PowerShell (the original is kept as a backup):
+
+```powershell
+$d = "C:\Program Files\SEGGER\SystemView\Description"
+Copy-Item "$d\SYSVIEW_FreeRTOS.txt" "$d\SYSVIEW_FreeRTOS.txt.segger-original"
+Copy-Item "$env:IDF_PATH\tools\esp_app_trace\SYSVIEW_FreeRTOS.txt" "$d\SYSVIEW_FreeRTOS.txt" -Force
+```
+
+Build and flash the trace firmware into its own folder `build_live/`. The first build downloads `esp_sysview` and stops with *"Re-run the build process"*; run the same command again.
+
+```powershell
+idf.py -B build_live -D SDKCONFIG=build_live/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.rtos;sdkconfig.trace_uart" -p COM5 build flash
+python tools/sysview_bridge.py --port COM5
+```
+
+Then in SystemView: *Target → Recorder Configuration* → **IP**, address `127.0.0.1`, port `19111`, and *Target → Start Recording* (`F5`).
+
+- **Why a bridge:** SystemView's own *UART* recorder stops with *"Error while recording"*. It starts with a short hello handshake that ESP-IDF's UART trace doesn't answer. The bridge answers it, then copies bytes both ways between SystemView's IP recorder and COM5. It also resets the board for every recording, so SystemView always gets the task list first. It holds COM5 until `Ctrl+C`, so stop it before flashing.
+- **No serial log:** COM5 carries the trace, so `ESP_LOGI` is off in this build. Logging is turned off completely, so the LED tasks don't spend about 1 ms formatting lines nobody sees.
+- **One core:** over UART SystemView traces one core, so this build runs FreeRTOS on core 0 only (`CONFIG_FREERTOS_UNICORE`). Every task is then in the trace.
+
+What to look at:
+
+- **Context window:** click the **Activations** header to sort. The rows that run come first: `LED1`, `LED2`, `LED3`, `Idle`, and the tick (`SYSTIMER_TARGET0` is the timer interrupt, with FreeRTOS's `SysTick` handler inside it, 100 per second). The many rows with 0 activations are just every interrupt the chip has; untick them to hide them from the timeline. In a 22.5 s recording: LED1 113, LED2 45 and LED3 22 activations (5 : 2 : 1), Idle 96 % of the CPU.
+- **Timeline:** zoom out to about 1–2 s, otherwise the window is too short to contain an LED run. The gap between two runs of one task is its interval and doesn't grow (no drift).
+- **Durations are inflated by tracing:** an LED run shows about 0.23 ms and a tick about 0.11 ms. Most of that is the time to push the trace events out of the UART. A bare pin toggle takes a few µs. The intervals are exact; the durations are mostly measurement overhead.
+
+To get the normal firmware and log back: `idf.py -p COM5 flash`.
+
 ## Wiring
 
 ![Wiring: GPIO4, GPIO5 and GPIO6 each drive an LED through a 220 Ω resistor to GND](docs/wiring.svg)
