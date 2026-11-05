@@ -1,5 +1,7 @@
 # Lesson 2.3: Superloop and independent tasks
 
+[![Simulate on Wokwi](https://img.shields.io/badge/simulate-Wokwi-6c4cbb)](https://wokwi.com/projects/479851584497659905)
+
 Beetroot Academy homework ([`TASK.md`](TASK.md)), ESP-IDF v6.0.2 on an ESP32-S3-DevKitC-1.
 
 Three external LEDs blink at different rates, each on its own schedule, from **one non-blocking loop** in `app_main`. No `vTaskDelay`-based blinking and no `while` that waits for time. Every LED checks the clock (`esp_timer_get_time()`, the ESP-IDF version of Arduino's `millis()`) and toggles when its interval has passed.
@@ -65,11 +67,13 @@ Exit the monitor with `Ctrl+]`.
 
 ## Simulate in Wokwi
 
-1. Install the **Wokwi Simulator** extension in VS Code.
-2. Run `idf.py build`.
-3. Run **Wokwi: Start Simulator** from the command palette (`F1`).
+**[▶ Open the Wokwi project](https://wokwi.com/projects/479851584497659905)** and press the green ▶ button. The first build can take a minute or two on Wokwi's free servers. Then watch the three LEDs blink at their own rates.
 
-[`wokwi.toml`](wokwi.toml) points the simulator at the build output, and [`diagram.json`](diagram.json) holds the circuit: the board, three LEDs with 220 Ω resistors on GPIO4/5/6 to GND, and the serial monitor. Right after a build the simulator can run slower than real time for a few seconds.
+The Wokwi project runs this repo's own C code. Wokwi compiles ESP-IDF code with the Arduino ESP32 core, which already has its own `app_main()`. So [`wokwi/sketch.ino`](wokwi/sketch.ino) calls our `app_main`, renamed to `lesson_2_3_diods_app_main` in the Wokwi copy of `main.c`; see [`wokwi/README.md`](wokwi/README.md). The `ESP_LOGI` messages don't appear in Wokwi's serial monitor, so watch the LEDs instead.
+
+- **VS Code:** install the *Wokwi Simulator* extension, run `idf.py build`, then run *Wokwi: Start Simulator*. This runs the real firmware: [`wokwi.toml`](wokwi.toml) points to the build, and [`diagram.json`](diagram.json) holds the circuit.
+
+Wokwi blends LED brightness over about 100 ms, so in the simulator an LED's "on" time looks about 100 ms shorter and its "off" time about 100 ms longer. The full period (on + off) is not affected.
 
 ## Expected serial log
 
@@ -91,4 +95,18 @@ The log prints about 8 lines per second (5 + 2 + 1 toggles), which is easy for t
 
 ## Execution results
 
-_To be added: the real serial log from the Wokwi simulator or the board._
+### Wokwi simulation
+
+Measured on 2026-11-05 in the [Wokwi project](https://wokwi.com/projects/479851584497659905) by timing the simulated LED edges for 6 s. Each pair is one on + one off time:
+
+| LED | Toggle every | Full period expected | Full period in Wokwi (examples) |
+|---|---|---|---|
+| LED1 | 200 ms | 400 ms | 98 + 298 = 396, 103 + 297 = 400, 104 + 300 = 404 ms |
+| LED2 | 500 ms | 1000 ms | 397 + 602 = 999, 401 + 597 = 998, 401 + 601 = 1002 ms |
+| LED3 | 1000 ms | 2000 ms | 900 + 1097 = 1997, 906 + 1098 = 2004 ms |
+
+All three LEDs ran at the same time, each at its own rate. The uneven on/off split (about 100/300 ms instead of 200/200 ms) comes from Wokwi's LED smoothing; see [Simulate in Wokwi](#simulate-in-wokwi).
+
+### Board
+
+_To be added: the serial log from the real board (`idf.py -p COM5 monitor`)._
