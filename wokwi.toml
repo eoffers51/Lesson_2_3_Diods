@@ -1,0 +1,9 @@
+# Wokwi simulator config (VS Code "Wokwi Simulator" extension or wokwi-cli).
+# Run `idf.py build` first; the circuit is in diagram.json.
+# flasher_args.json lists the bootloader, partition table and app
+# (build/Lesson_2_3_Diods.bin) with their flash offsets, so Wokwi boots the
+# same image that `idf.py flash` writes to the real board.
+[wokwi]
+version = 1
+firmware = 'build/flasher_args.json'
+elf = 'build/Lesson_2_3_Diods.elf'
