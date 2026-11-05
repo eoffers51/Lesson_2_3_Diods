@@ -1,0 +1,16 @@
+menu "Lesson 2.3 LEDs"
+
+    choice LEDS_SOLUTION
+        prompt "Blink solution"
+        default LEDS_SOLUTION_SUPERLOOP
+        help
+            Which of the two solutions is built into the firmware.
+
+        config LEDS_SOLUTION_SUPERLOOP
+            bool "Superloop with esp_timer_get_time() (main.c, the homework)"
+
+        config LEDS_SOLUTION_RTOS_TASKS
+            bool "One FreeRTOS task per LED with xTaskCreate (main_rtos.c)"
+    endchoice
+
+endmenu

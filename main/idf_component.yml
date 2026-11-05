@@ -1,0 +1,12 @@
+dependencies:
+  idf:
+    version: ">=6.0"
+  # SEGGER SystemView tracing (see "Watching the tasks live in SystemView" in the
+  # README). Only downloaded when the trace build turns the external trace
+  # library on (sdkconfig.trace_uart), so the normal builds don't need it.
+  # Pinned to 1.0.x: 1.1.x needs the newer esp_trace API (an encoder `flush`
+  # hook) that IDF v6.0.2 doesn't have, so it doesn't compile here.
+  espressif/esp_sysview:
+    version: "~1.0.2"
+    rules:
+      - if: "$CONFIG{ESP_TRACE_LIB_EXTERNAL} == True"
