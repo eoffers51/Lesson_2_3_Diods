@@ -75,41 +75,13 @@ The Wokwi project runs this repo's own C code. Wokwi compiles ESP-IDF code with 
 
 Wokwi blends LED brightness over about 100 ms, so in the simulator an LED's "on" time looks about 100 ms shorter and its "off" time about 100 ms longer. The full period (on + off) is not affected.
 
-## Expected serial log
-
-This is the **expected** output, not a measured one. The absolute times depend on how long the board takes to boot. Check the gaps: LED1 every 200 ms, LED2 every 500 ms, LED3 every 1000 ms, each up to about 10 ms late. When several LEDs are due on the same pass, they print together.
-
-```
-I (300) leds: 3 LEDs ready, starting the superloop
-I (500) leds: LED1 -> ON  at 500 ms
-I (700) leds: LED1 -> OFF at 700 ms
-I (800) leds: LED2 -> ON  at 800 ms
-I (900) leds: LED1 -> ON  at 900 ms
-I (1100) leds: LED1 -> OFF at 1100 ms
-I (1300) leds: LED1 -> ON  at 1300 ms
-I (1300) leds: LED2 -> OFF at 1300 ms
-I (1300) leds: LED3 -> ON  at 1300 ms
-```
-
-The log prints about 8 lines per second (5 + 2 + 1 toggles), which is easy for the 115200-baud console.
-
 ## Execution results
 
-### Wokwi simulation
+Run on 2026-11-05 in the Wokwi simulator.
 
-Measured on 2026-11-05 in the [Wokwi project](https://wokwi.com/projects/479851584497659905) by timing the simulated LED edges for 6 s. Each pair is one on + one off time:
+### Serial log
 
-| LED | Toggle every | Full period expected | Full period in Wokwi (examples) |
-|---|---|---|---|
-| LED1 | 200 ms | 400 ms | 98 + 298 = 396, 103 + 297 = 400, 104 + 300 = 404 ms |
-| LED2 | 500 ms | 1000 ms | 397 + 602 = 999, 401 + 597 = 998, 401 + 601 = 1002 ms |
-| LED3 | 1000 ms | 2000 ms | 900 + 1097 = 1997, 906 + 1098 = 2004 ms |
-
-All three LEDs ran at the same time, each at its own rate. The uneven on/off split (about 100/300 ms instead of 200/200 ms) comes from Wokwi's LED smoothing; see [Simulate in Wokwi](#simulate-in-wokwi).
-
-#### Serial log (real ESP-IDF firmware in Wokwi)
-
-The shared Wokwi link hides `ESP_LOGI` output, so this run used the real firmware instead: `idf.py merge-bin`, then *Upload Firmware and Start Simulation* on wokwi.com (2026-11-05). First 26 lines:
+The real ESP-IDF firmware from this repo (`idf.py build merge-bin`) running in Wokwi with *Upload Firmware and Start Simulation*. These are the first 24 lines. The log keeps going at about 8 lines per second (5 + 2 + 1 toggles).
 
 ```
 I (209) main_task: Started on CPU0
@@ -138,14 +110,24 @@ I (2829) leds: LED1 -> ON  at 2963 ms
 I (3029) leds: LED1 -> OFF at 3163 ms
 ```
 
-| LED | Toggle times from `esp_timer_get_time()` (ms) | Gap | Expected |
+| LED | Toggle times from `esp_timer_get_time()` (ms) | Gap | Expected | Result |
+|---|---|---|---|---|
+| LED1 | 563, 763, 963, 1163, 1363, 1563, … | 200 ms | 200 ms | ✅ |
+| LED2 | 863, 1363, 1863, 2363, 2863 | 500 ms | 500 ms | ✅ |
+| LED3 | 1363, 2363 | 1000 ms | 1000 ms | ✅ |
+
+- **The LEDs are independent.** At 1363 ms and 2363 ms, two or three LEDs toggle in the same loop pass, and none of them waits for another.
+- **No drift.** Every gap is exact over 3 s, because each LED's clock moves forward by `+= interval`, not `= now`.
+- **Two clocks.** The `I (…)` prefix is the log's own timestamp, and `at … ms` is `esp_timer_get_time()`. They differ by a constant 134 ms here, so the gaps are the same in both.
+
+### LED timing in the shared Wokwi project
+
+Measured by timing the simulated LED edges for 6 s in the [Wokwi project](https://wokwi.com/projects/479851584497659905). Each pair is one on time + one off time:
+
+| LED | Full period expected | Full period in Wokwi (examples) | Result |
 |---|---|---|---|
-| LED1 | 563, 763, 963, 1163, 1363, … | 200 ms | 200 ms |
-| LED2 | 863, 1363, 1863, 2363, 2863 | 500 ms | 500 ms |
-| LED3 | 1363, 2363 | 1000 ms | 1000 ms |
+| LED1 | 400 ms | 98 + 298 = 396, 103 + 297 = 400, 104 + 300 = 404 ms | ✅ |
+| LED2 | 1000 ms | 397 + 602 = 999, 401 + 597 = 998, 401 + 601 = 1002 ms | ✅ |
+| LED3 | 2000 ms | 900 + 1097 = 1997, 906 + 1098 = 2004 ms | ✅ |
 
-The `I (…)` prefix and the `at … ms` value come from two different clocks: the log's own timestamp and `esp_timer_get_time()`. They differ by a constant 134 ms here, so the gaps are the same in both.
-
-### Board
-
-_To be added: the serial log from the real board (`idf.py -p COM5 monitor`)._
+The uneven on/off split (about 100/300 ms instead of 200/200 ms) is Wokwi's LED smoothing, not the firmware: the serial log above shows exact 200 ms toggles. See [Simulate in Wokwi](#simulate-in-wokwi).
