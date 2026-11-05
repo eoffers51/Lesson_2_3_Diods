@@ -29,6 +29,7 @@ ESP-IDF v6.0.2 project for an **ESP32-S3-DevKitC-1** clone (Beetroot Academy hom
 
 - External LEDs, each wired GPIO → 220 Ω → LED anode, cathode → GND (active HIGH): **LED1 = GPIO4** (200 ms), **LED2 = GPIO5** (500 ms), **LED3 = GPIO6** (1000 ms).
 - The onboard RGB LED is a WS2812 on GPIO48. It is addressable, so `gpio_set_level` won't drive it. It's not one of the three plain LEDs.
+- The wiring is drawn in `docs/wiring.svg` (README picture) and `diagram.json` (Wokwi). If a pin changes, update both.
 - Serial port is COM5 (CH343 USB-UART). The small green LED that flickers with log output is the UART TX light, not an app LED.
 
 ## Repo

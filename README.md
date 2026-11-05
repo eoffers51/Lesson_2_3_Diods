@@ -40,6 +40,8 @@ if (now_us - led->last_toggle_us >= led->interval_us) {
 
 ## Wiring
 
+![Wiring: GPIO4, GPIO5 and GPIO6 each drive an LED through a 220 Ω resistor to GND](docs/wiring.svg)
+
 Each LED: GPIO → 220 Ω resistor → LED anode (long leg), LED cathode (short leg) → GND. HIGH = on.
 
 | LED | Board pin (silkscreen label) | Resistor | Return |
