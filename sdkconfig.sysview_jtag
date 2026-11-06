@@ -1,0 +1,37 @@
+# SEGGER SystemView recorded over JTAG (both cores, one .SVDat file), added on top
+# of sdkconfig.rtos (solution 2, one FreeRTOS task per LED).
+# JTAG link: the ESP32-S3's built-in USB-JTAG on the board's native USB port.
+# Connect it AND the CH343 USB-UART port (COM5: flashing; the serial log stays on).
+# Build in its own folder. The idf.py options for that folder are in sysview_jtag.args:
+#   idf.py '@sysview_jtag.args' build
+#   idf.py '@sysview_jtag.args' -p COM5 flash
+# Record with OpenOCD + GDB (gdbinit), open with SystemView File > Load Data.
+# Same options as ESP-IDF's examples/system/sysview_tracing (sdkconfig.defaults +
+# sdkconfig.ci.sysview_jtag).
+
+# The chip. The trace build folder starts without an sdkconfig, and without this
+# line it would default to plain esp32.
+CONFIG_IDF_TARGET="esp32s3"
+
+# Tracing on, over apptrace/JTAG, with the SystemView library (esp_sysview).
+CONFIG_ESP_TRACE_ENABLE=y
+CONFIG_ESP_TRACE_LIB_EXTERNAL=y
+CONFIG_ESP_TRACE_TRANSPORT_APPTRACE=y
+CONFIG_APPTRACE_DEST_JTAG=y
+# Event timestamps from esp_timer (1 us), the same clock as esp_timer_get_time().
+CONFIG_ESP_TRACE_TS_SOURCE_ESP_TIMER=y
+
+# Which FreeRTOS events are recorded (the full set, as in the example).
+CONFIG_SEGGER_SYSVIEW_EVT_OVERFLOW_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_ISR_ENTER_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_ISR_EXIT_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_ISR_TO_SCHED_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_START_EXEC_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_STOP_EXEC_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_START_READY_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_STOP_READY_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_CREATE_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TASK_TERMINATE_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_IDLE_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TIMER_ENTER_ENABLE=y
+CONFIG_SEGGER_SYSVIEW_EVT_TIMER_EXIT_ENABLE=y

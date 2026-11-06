@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "leds_rtos";
 
@@ -120,3 +121,36 @@ void app_main(void)
     // Step 4: nothing left to do. In ESP-IDF, returning from app_main is
     // allowed: the main task deletes itself and the three blink tasks keep running.
 }
+
+// SystemView trace build only (sdkconfig.sysview_jtag, see README). In the
+// normal builds CONFIG_ESP_TRACE_LIB_EXTERNAL is off and this compiles to nothing.
+//
+// At boot ESP-IDF calls esp_trace_get_user_params() to learn which trace encoder
+// and transport to open. Its weak default asks for the encoder "ext"
+// (CONFIG_ESP_TRACE_LIB_NAME, no menuconfig prompt), but the esp_sysview
+// component registers itself as "sysview". Without this override the trace
+// firmware aborts at boot with
+//   E esp_trace_core: Encoder 'ext' or transport 'apptrace' not found
+// It is the same function as in ESP-IDF's examples/system/sysview_tracing.
+//
+// Why here and not in a file of its own: the weak default already satisfies the
+// symbol, so the linker would never pull a separate object out of libmain.a.
+// This file is always linked because it defines app_main.
+#if CONFIG_ESP_TRACE_LIB_EXTERNAL
+#include "esp_app_trace.h" // esp_apptrace_config_t, APPTRACE_CONFIG_DEFAULT
+#include "esp_trace.h"     // from esp_trace, brought in by the esp_sysview component
+
+esp_trace_open_params_t esp_trace_get_user_params(void)
+{
+    // All APPTRACE_* values come from sdkconfig (JTAG destination).
+    static esp_apptrace_config_t app_trace_config = APPTRACE_CONFIG_DEFAULT();
+    const esp_trace_open_params_t trace_params = {
+        .core_cfg = NULL,
+        .encoder_name = "sysview", // registered by espressif/esp_sysview
+        .encoder_cfg = NULL,
+        .transport_name = "apptrace", // ESP-IDF app trace over JTAG
+        .transport_cfg = &app_trace_config,
+    };
+    return trace_params;
+}
+#endif // CONFIG_ESP_TRACE_LIB_EXTERNAL
