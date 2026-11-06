@@ -81,18 +81,19 @@ Repeat the `-D` options on **every** `idf.py` command for `build_rtos`. Without 
 
 The Wokwi project and `wokwi.toml` run solution 1.
 
-### Watching the tasks live in SystemView
+### Recording the tasks with SystemView
 
-[SEGGER SystemView](https://www.segger.com/products/development-tools/systemview/) shows which FreeRTOS task runs when, live while the board runs. For solution 2 you see `LED1`, `LED2` and `LED3` wake every 200, 500 and 1000 ms for a moment, then go back to *Blocked*, with `Idle` running the rest of the time. The trace goes out over the same COM port as flashing, so no extra cable is needed.
+[SEGGER SystemView](https://www.segger.com/products/development-tools/systemview/) shows which FreeRTOS task runs when. For solution 2 you see `LED1`, `LED2` and `LED3` wake every 200, 500 and 1000 ms for a moment, then go back to *Blocked*, with the idle tasks running the rest of the time. The trace is recorded over the ESP32-S3's built-in USB-JTAG with Espressif's own tooling (`espressif/esp_sysview`, apptrace, OpenOCD), for both cores, and opened in SystemView afterwards. Connect **both** USB ports: the CH343 one (COM5) flashes and keeps the serial log, the native USB one carries JTAG.
 
 | File | What it does |
 |---|---|
-| [`sdkconfig.trace_uart`](sdkconfig.trace_uart) | Trace settings, added on top of `sdkconfig.rtos`: SystemView over UART0 (COM5) at 1 Mbaud, serial log and logging off, FreeRTOS on one core |
+| [`sdkconfig.sysview_jtag`](sdkconfig.sysview_jtag) | Trace settings, added on top of `sdkconfig.rtos`: SystemView library, apptrace over JTAG, 1 µs timestamps from `esp_timer`, the FreeRTOS events to record. Same options as ESP-IDF's `examples/system/sysview_tracing` |
+| [`sysview_jtag.args`](sysview_jtag.args) | The three `idf.py` options of the trace build folder `build_trace/` (`-B`, `-D SDKCONFIG`, `-D SDKCONFIG_DEFAULTS`), read with `idf.py '@sysview_jtag.args' ...` |
+| [`gdbinit`](gdbinit) | GDB script: resets the chip under OpenOCD, waits 3 s for the tasks to start, starts the recording into `build_trace/trace.SVDat` |
 | [`main/idf_component.yml`](main/idf_component.yml) | Pulls in `espressif/esp_sysview` (SystemView moved out of ESP-IDF in v6.0), only when tracing is on. Pinned to `~1.0.2`: 1.1.x needs a newer `esp_trace` API than IDF v6.0.2 has |
-| [`main/trace_params.c`](main/trace_params.c) | Trace build only. Tells ESP-IDF to open the `"sysview"` encoder. Without it the firmware aborts at boot with `Encoder 'ext' or transport 'apptrace' not found` |
-| [`tools/sysview_bridge.py`](tools/sysview_bridge.py) | Connects SystemView to COM5 (see below) |
+| `esp_trace_get_user_params()` at the end of [`main/main_rtos.c`](main/main_rtos.c) | Trace build only. Tells ESP-IDF to open the `"sysview"` encoder. Without it the firmware aborts at boot with `Encoder 'ext' or transport 'apptrace' not found`. It sits in the file with `app_main` because ESP-IDF's default is a weak function, so a separate file would never be linked |
 
-One-time setup: ESP-IDF numbers the FreeRTOS events its own way, so SystemView needs ESP-IDF's event description file. From an **administrator** PowerShell (the original is kept as a backup):
+One-time setup: ESP-IDF numbers the FreeRTOS events its own way, so SystemView (3.60 or newer) needs ESP-IDF's event description file. From an **administrator** PowerShell (the original is kept as a backup):
 
 ```powershell
 $d = "C:\Program Files\SEGGER\SystemView\Description"
@@ -100,24 +101,35 @@ Copy-Item "$d\SYSVIEW_FreeRTOS.txt" "$d\SYSVIEW_FreeRTOS.txt.segger-original"
 Copy-Item "$env:IDF_PATH\tools\esp_app_trace\SYSVIEW_FreeRTOS.txt" "$d\SYSVIEW_FreeRTOS.txt" -Force
 ```
 
-Build and flash the trace firmware into its own folder `build_live/`. The first build downloads `esp_sysview` and stops with *"Re-run the build process"*; run the same command again.
+Build and flash the trace firmware into its own folder `build_trace/`. The quotes around `'@sysview_jtag.args'` are needed in PowerShell, where a bare `@name` means splatting a variable. The first build downloads `esp_sysview` and may stop with *"Re-run the build process"*; run the same command again.
 
 ```powershell
-idf.py -B build_live -D SDKCONFIG=build_live/sdkconfig -D "SDKCONFIG_DEFAULTS=sdkconfig.rtos;sdkconfig.trace_uart" -p COM5 build flash
-python tools/sysview_bridge.py --port COM5
+idf.py '@sysview_jtag.args' build
+idf.py '@sysview_jtag.args' -p COM5 flash
 ```
 
-Then in SystemView: *Target → Recorder Configuration* → **IP**, address `127.0.0.1`, port `19111`, and *Target → Start Recording* (`F5`).
+Record, in two terminals with the ESP-IDF environment, both in the project root:
 
-- **Why a bridge:** SystemView's own *UART* recorder stops with *"Error while recording"*. It starts with a short hello handshake that ESP-IDF's UART trace doesn't answer. The bridge answers it, then copies bytes both ways between SystemView's IP recorder and COM5. It also resets the board for every recording, so SystemView always gets the task list first. It holds COM5 until `Ctrl+C`, so stop it before flashing.
-- **No serial log:** COM5 carries the trace, so `ESP_LOGI` is off in this build. Logging is turned off completely, so the LED tasks don't spend about 1 ms formatting lines nobody sees.
-- **One core:** over UART SystemView traces one core, so this build runs FreeRTOS on core 0 only (`CONFIG_FREERTOS_UNICORE`). Every task is then in the trace.
+```powershell
+# Terminal 1: OpenOCD on the built-in USB-JTAG
+idf.py '@sysview_jtag.args' openocd
+
+# Terminal 2: GDB runs gdbinit, the recording starts and the (gdb) prompt comes back
+xtensa-esp32s3-elf-gdb -x gdbinit build_trace\Lesson_2_3_Diods.elf
+```
+
+After 10 to 30 s type `mon esp sysview_mcore stop` at the `(gdb)` prompt, then `quit` (answer `y`), and stop OpenOCD with `Ctrl+C`. In SystemView: **File → Load Data** (`Ctrl+O`) → `build_trace\trace.SVDat`.
+
+- **Reset under OpenOCD:** apptrace over JTAG only delivers data when the app booted while OpenOCD was attached, so `gdbinit` does `mon reset run` first. After a reset from esptool or the power switch, a recording without it stays empty (`apptrace connection is lost`).
+- **The `1` after the file name** in `gdbinit` is the poll period in ms. Without it OpenOCD runs the command in blocking mode, ignores `stop` and never writes the merged `trace.SVDat`.
+- **Logging stays on:** each LED run includes formatting an `ESP_LOGI` line and taking the log lock, which shows as `xQueueGenericSend/Receive` events inside `LED1`..`LED3`.
 
 What to look at:
 
-- **Context window:** click the **Activations** header to sort. The rows that run come first: `LED1`, `LED2`, `LED3`, `Idle`, and the tick (`SYSTIMER_TARGET0` is the timer interrupt, with FreeRTOS's `SysTick` handler inside it, 100 per second). The many rows with 0 activations are just every interrupt the chip has; untick them to hide them from the timeline. In a 22.5 s recording: LED1 113, LED2 45 and LED3 22 activations (5 : 2 : 1), Idle 96 % of the CPU.
+- **Context window:** click the **Activations** header to sort. The rows that run come first: `LED1`, `LED2`, `LED3`, the idle tasks, and the tick (`SYSTIMER_TARGET0` is the timer interrupt, with FreeRTOS's `SysTick` handler inside it, 100 per second). The many rows with 0 activations are just every interrupt the chip has; untick them to hide them from the timeline. Activations ≈ recording time / interval, so LED1 : LED2 : LED3 come out 5 : 2 : 1.
+- **Both cores** are in one view. Check which core each LED task ran on. `FROM_CPU_INTR0` around task switches is the cross-core interrupt FreeRTOS uses; it's normal.
 - **Timeline:** zoom out to about 1–2 s, otherwise the window is too short to contain an LED run. The gap between two runs of one task is its interval and doesn't grow (no drift).
-- **Durations are inflated by tracing:** an LED run shows about 0.23 ms and a tick about 0.11 ms. Most of that is the time to push the trace events out of the UART. A bare pin toggle takes a few µs. The intervals are exact; the durations are mostly measurement overhead.
+- **Durations include tracing overhead:** every event is encoded into the trace buffer, so an LED run looks longer than the few µs a bare pin toggle takes. The intervals and counts are exact.
 
 To get the normal firmware and log back: `idf.py -p COM5 flash`.
 

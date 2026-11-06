@@ -80,4 +80,5 @@ Desktop.ini
 # Local IDE settings (contain machine-specific paths)
 .vscode/
 build_rtos/
-build_live/
+build_trace/
+*.SVDat
